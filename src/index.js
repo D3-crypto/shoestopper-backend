@@ -87,6 +87,16 @@ app.use('/api/orders', require('./routes/orders'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/sales', require('./routes/sales'));
 
+// Health check endpoint for hosts like Render
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), timestamp: Date.now() });
+});
+
+// Root endpoint to verify service is up
+app.get('/', (req, res) => {
+  res.send('ShoeStopper backend is running');
+});
+
 async function start() {
   try {
     console.log(`[DATABASE] Connecting to MongoDB...`);
@@ -116,3 +126,4 @@ start().catch(err => {
   console.error('Failed to start', err);
   process.exit(1);
 });
+
