@@ -59,6 +59,19 @@ router.post('/subscribe', async (req, res) => {
 
     // Send welcome email
     try {
+      // Check if email configuration is available
+      if (!config.email.user || !config.email.pass) {
+        console.warn('Email configuration missing - EMAIL_USER or EMAIL_PASS not set');
+        console.log('Available email config:', {
+          host: config.email.host,
+          port: config.email.port,
+          user: config.email.user ? 'SET' : 'NOT SET',
+          pass: config.email.pass ? 'SET' : 'NOT SET',
+          from: config.email.from
+        });
+        throw new Error('Email configuration incomplete');
+      }
+
       const transporter = createTransporter();
       
       const mailOptions = {

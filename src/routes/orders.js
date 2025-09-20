@@ -12,6 +12,115 @@ const Otp = require('../models/Otp');
 const User = require('../models/User');
 const { sendMail } = require('../utils/mailer');
 
+// Function to send order confirmation email
+const sendOrderConfirmationEmail = async (order, userEmail, userName) => {
+  try {
+    const formatCurrency = (amount) => `₹${amount.toLocaleString('en-IN')}`;
+    
+    const itemsHtml = order.items.map(item => `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 15px 0; font-size: 16px; color: #333;">
+          ${item.productId?.title || 'Product'} ${item.size ? `(Size: ${item.size})` : ''}
+        </td>
+        <td style="padding: 15px 0; text-align: center; color: #666;">
+          ${item.quantity}
+        </td>
+        <td style="padding: 15px 0; text-align: right; font-weight: bold; color: #333;">
+          ${formatCurrency(item.price)}
+        </td>
+      </tr>
+    `).join('');
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
+          <h1 style="color: white; margin: 0; font-size: 28px;">Order Confirmed! 🎉</h1>
+          <p style="color: #e8e8e8; margin: 10px 0 0 0; font-size: 16px;">Thank you for choosing ShoeStopper</p>
+        </div>
+        
+        <!-- Main Content -->
+        <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: #333; margin-top: 0;">Hi ${userName || 'there'}! 👋</h2>
+          
+          <p style="color: #666; line-height: 1.6; font-size: 16px;">
+            Great news! Your order has been confirmed and we're getting it ready for you.
+          </p>
+          
+          <!-- Order Details -->
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #333; margin: 0 0 15px 0;">Order Details</h3>
+            <p style="margin: 5px 0; color: #666;"><strong>Order ID:</strong> ${order.orderId}</p>
+            <p style="margin: 5px 0; color: #666;"><strong>Order Date:</strong> ${new Date(order.createdAt).toLocaleDateString('en-IN', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}</p>
+            <p style="margin: 5px 0; color: #666;"><strong>Payment Method:</strong> ${order.payment.method.toUpperCase()}</p>
+            <p style="margin: 5px 0; color: #666;"><strong>Status:</strong> <span style="color: #28a745; font-weight: bold;">${order.status}</span></p>
+          </div>
+          
+          <!-- Items -->
+          <h3 style="color: #333; margin: 30px 0 15px 0;">Items Ordered</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background: #f8f9fa;">
+                <th style="padding: 15px 0; text-align: left; color: #333; font-weight: bold;">Product</th>
+                <th style="padding: 15px 0; text-align: center; color: #333; font-weight: bold;">Qty</th>
+                <th style="padding: 15px 0; text-align: right; color: #333; font-weight: bold;">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          
+          <!-- Total -->
+          <div style="text-align: right; margin-top: 20px; padding-top: 20px; border-top: 2px solid #667eea;">
+            <h3 style="color: #333; margin: 0;">Total: ${formatCurrency(order.totalAmount)}</h3>
+          </div>
+          
+          <!-- Delivery Address -->
+          <h3 style="color: #333; margin: 30px 0 15px 0;">Delivery Address</h3>
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; line-height: 1.6; color: #666;">
+            <strong>${order.deliveryAddress.name}</strong><br>
+            ${order.deliveryAddress.street}<br>
+            ${order.deliveryAddress.city}, ${order.deliveryAddress.state} ${order.deliveryAddress.pincode}<br>
+            ${order.deliveryAddress.phone ? `Phone: ${order.deliveryAddress.phone}` : ''}
+          </div>
+          
+          <!-- Action Button -->
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://d3-crypto.github.io/ShoeStopper/orders" 
+               style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block;">
+              Track Your Order
+            </a>
+          </div>
+          
+          <!-- Footer -->
+          <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 14px; margin: 0;">
+              Need help? Contact us at 
+              <a href="mailto:leadersonu651@gmail.com" style="color: #667eea;">leadersonu651@gmail.com</a>
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await sendMail({
+      to: userEmail,
+      subject: `Order Confirmed! #${order.orderId} 📦`,
+      html: htmlContent
+    });
+
+    console.log(`✅ Order confirmation email sent to ${userEmail}`);
+  } catch (error) {
+    console.error('❌ Error sending order confirmation email:', error);
+    // Don't fail the order if email fails
+  }
+};
+
 // Get all orders (Admin only)
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -131,6 +240,14 @@ router.post('/', authenticateToken, async (req, res) => {
     
     console.log('✅ [ORDER CREATE] Order created successfully:', order.orderId);
     
+    // Send order confirmation email
+    try {
+      await sendOrderConfirmationEmail(order, req.user.email, req.user.name);
+    } catch (emailError) {
+      console.error('❌ Failed to send order confirmation email:', emailError);
+      // Continue with order creation even if email fails
+    }
+    
     // Create different messages based on payment method
     let message = 'Order placed successfully';
     let needsPayment = false;
@@ -222,13 +339,14 @@ router.post('/create', async (req, res) => {
     session.endSession();
 
     // Send order confirmation email
-    const user = await User.findById(userId);
-    if (user) {
-      await sendMail({
-        to: user.email,
-        subject: 'Order Confirmation',
-        text: `Your order ${order[0].orderId} has been ${paymentMethod === 'COD' ? 'approved' : 'created'}. Total: $${total}`
-      });
+    try {
+      const user = await User.findById(userId);
+      if (user) {
+        await sendOrderConfirmationEmail(order[0], user.email, user.name);
+      }
+    } catch (emailError) {
+      console.error('❌ Failed to send order confirmation email:', emailError);
+      // Continue with order creation even if email fails
     }
 
     res.json({ ok: true, orderId: order[0].orderId, transactionId: tx ? tx[0].transactionId : null });
