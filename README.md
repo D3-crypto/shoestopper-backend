@@ -1,10 +1,10 @@
 # 🛒 ShoeStopper - Complete E-commerce Backend
 
-**Enterprise-grade Node.js + Express + MongoDB e-commerce platform for shoe retail with advanced authentication, inventory management, and analytics.**
+**Enterprise-grade Node.js + Express + MongoDB e-commerce platform for shoe retail with advanced authentication, inventory management, analytics, and automated email communications.**
 
 ## 🎯 **Project Overview**
 
-ShoeStopper is a comprehensive e-commerce backend specifically designed for shoe retail businesses. It provides everything needed to run a modern online shoe store with sophisticated features like variant-based inventory, secure authentication, order management, and business analytics.
+ShoeStopper is a comprehensive e-commerce backend specifically designed for shoe retail businesses. It provides everything needed to run a modern online shoe store with sophisticated features like variant-based inventory, secure authentication, order management, business analytics, newsletter subscriptions, and automated customer communications.
 
 ## ✨ **Core Features**
 
@@ -39,11 +39,19 @@ ShoeStopper is a comprehensive e-commerce backend specifically designed for shoe
 - **Order Tracking**: Real-time status updates with history
 - **Payment Processing**: OTP-based payment confirmation for security
 
+### 📧 **Email Communications System** ✨ *NEW*
+- **Newsletter Subscriptions**: Beautiful HTML newsletters with unsubscribe functionality
+- **Order Confirmations**: Professional order confirmation emails with detailed receipts
+- **Payment Notifications**: Instant email alerts for successful payments
+- **Welcome Emails**: Branded welcome messages for new newsletter subscribers
+- **Email Templates**: Responsive HTML designs matching brand identity
+
 ### 👨‍💼 **Admin Dashboard**
 - **Product Management**: Create/update products and variants
 - **Inventory Control**: Real-time stock level management
 - **Order Management**: View, filter, and update order status
 - **User Management**: Complete customer overview and management
+- **Newsletter Management**: View subscriber lists and manage communications
 - **Business Analytics**: Sales, inventory, and customer insights
 
 ### 📊 **Advanced Analytics**
@@ -59,7 +67,7 @@ ShoeStopper is a comprehensive e-commerce backend specifically designed for shoe
 - **Framework**: Express.js
 - **Database**: MongoDB with Mongoose ODM
 - **Authentication**: JWT with refresh token rotation
-- **Email**: Nodemailer integration
+- **Email Service**: Nodemailer with Gmail SMTP integration ✨ *ENHANCED*
 - **Security**: bcrypt password hashing, rate limiting
 
 ### **Database Models**
@@ -72,6 +80,7 @@ ShoeStopper is a comprehensive e-commerce backend specifically designed for shoe
 - **Transaction**: Payment processing and tracking
 - **OTP**: Temporary codes for verification
 - **RefreshToken**: Secure session management
+- **Subscriber**: Newsletter subscriptions with unsubscribe tokens ✨ *NEW*
 
 ### **Security Features**
 - **Password Hashing**: bcrypt with salt rounds
@@ -1847,6 +1856,11 @@ npm run dev
 ### Admin
 - `POST /api/admin/product` - Create product
 - `POST /api/admin/variant` - Create variant
+
+### Newsletter ✨ *NEW*
+- `POST /api/newsletter/subscribe` - Subscribe to newsletter
+- `GET /api/newsletter/unsubscribe/:token` - Unsubscribe from newsletter
+- `GET /api/newsletter/subscribers` - Get all subscribers (Admin only)
 - `POST /api/admin/order/:orderId/status` - Update order status
 - `PUT /api/admin/variant/:variantId/stock` - Update stock
 - `GET /api/admin/orders` - List all orders
