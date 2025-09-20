@@ -1,61 +1,175 @@
-# 🛒 ShoeStopper - Complete E-commerce Backend
+# 🛒 ShoeStopper Backend
 
-**Enterprise-grade Node.js + Express + MongoDB e-commerce platform for shoe retail with advanced authentication, inventory management, analytics, and automated email communications.**
+Enterprise-grade Node.js + Express + MongoDB e-commerce API for shoe retail with authentication, inventory management, and email communications.
 
-## 🎯 **Project Overview**
+## 🎯 Overview
 
-ShoeStopper is a comprehensive e-commerce backend specifically designed for shoe retail businesses. It provides everything needed to run a modern online shoe store with sophisticated features like variant-based inventory, secure authentication, order management, business analytics, newsletter subscriptions, and automated customer communications.
+ShoeStopper backend provides a complete REST API for e-commerce operations including user management, product catalog, shopping cart, order processing, and automated email notifications.
 
-## ✨ **Core Features**
+## ✨ Features
 
-### 🔐 **Advanced Authentication System**
-- **Email-based Registration**: OTP verification with auto-cleanup of unverified accounts
-- **Smart Security**: Failed login protection with automatic account locking (5 attempts)
-- **JWT Token Management**: Access tokens (15min) + refresh token rotation (30 days)
-- **Password Recovery**: OTP-based secure password reset
-- **Session Management**: Automatic breach detection and token revocation
+### Authentication & Security
+- JWT-based authentication with refresh token rotation
+- OTP email verification for registration and password reset
+- Secure password hashing with bcrypt
+- Account lockout protection after failed login attempts
 
-### 👤 **User Management**
-- **Complete Profiles**: Name, email, phone, verification status
-- **Address Management**: Multiple addresses (max 5) with default selection
-- **Account Security**: Email verification, login blocking/unblocking
-- **Order History**: Comprehensive tracking with filtering and search
+### Product Management
+- Complete product catalog with categories and variants
+- Size and color variant system with individual stock tracking
+- Real-time inventory management with atomic stock updates
+- Advanced search and filtering capabilities
 
-### 🛍️ **Product & Inventory System**
-- **Product Catalog**: Title, description, pricing, categories, images
-- **Variant System**: Color and size combinations with individual stock tracking
-- **Real-time Inventory**: Atomic stock management prevents overselling
-- **Search & Filtering**: Text search, category, color, size filters
+### Order Processing
+- Multi-payment support (COD, Card, UPI)
+- Complete order lifecycle management
+- OTP-based payment confirmation
+- Automated email confirmations for orders and payments
 
-### 🛒 **Shopping Experience**
-- **Shopping Cart**: Multi-variant items with quantity management
-- **Wishlist**: Save favorite products for later
-- **Stock Validation**: Real-time availability checking
-- **Smart Recommendations**: Product suggestions and categories
+### Email System
+- Newsletter subscription with welcome emails
+- Order confirmation emails with detailed receipts
+- Payment notification emails
+- HTML email templates with brand styling
 
-### 💳 **Order & Payment Management**
-- **Complete Order Lifecycle**: PaymentPending → Paid → Approved → Shipped → Delivered
-- **Multiple Payment Methods**: Cash on Delivery (COD), Card, UPI
-- **Order Tracking**: Real-time status updates with history
-- **Payment Processing**: OTP-based payment confirmation for security
+### User Experience
+- Shopping cart with multi-variant items
+- Wishlist functionality
+- Address management (up to 5 addresses per user)
+- Order history and tracking
 
-### 📧 **Email Communications System** ✨ *NEW*
-- **Newsletter Subscriptions**: Beautiful HTML newsletters with unsubscribe functionality
-- **Order Confirmations**: Professional order confirmation emails with detailed receipts
-- **Payment Notifications**: Instant email alerts for successful payments
-- **Welcome Emails**: Branded welcome messages for new newsletter subscribers
-- **Email Templates**: Responsive HTML designs matching brand identity
+## 🏗️ Tech Stack
 
-### 👨‍💼 **Admin Dashboard**
-- **Product Management**: Create/update products and variants
-- **Inventory Control**: Real-time stock level management
-- **Order Management**: View, filter, and update order status
-- **User Management**: Complete customer overview and management
-- **Newsletter Management**: View subscriber lists and manage communications
-- **Business Analytics**: Sales, inventory, and customer insights
+- **Runtime**: Node.js
+- **Framework**: Express.js
+- **Database**: MongoDB with Mongoose ODM
+- **Authentication**: JWT tokens
+- **Email**: Nodemailer with Gmail SMTP
+- **Security**: bcrypt password hashing
 
-### 📊 **Advanced Analytics**
-- **Sales Analytics**: Revenue tracking, top products, daily/monthly reports
+## � Database Models
+
+- **User**: User profiles, addresses, verification status
+- **Product**: Product catalog with pricing and categories
+- **Variant**: Product variants (size/color) with stock levels
+- **Order**: Order management and status tracking
+- **Cart**: Shopping cart items
+- **Wishlist**: Saved products
+- **Transaction**: Payment processing records
+- **OTP**: Verification codes with TTL
+- **RefreshToken**: Session management
+- **Subscriber**: Newsletter subscriptions
+
+## 🚀 Quick Start
+
+### Installation
+```bash
+git clone https://github.com/D3-crypto/shoestopper-backend.git
+cd shoestopper-backend
+npm install
+```
+
+### Environment Setup
+```bash
+# Required environment variables
+MONGO_URI=mongodb://localhost:27017/shoestopper
+JWT_ACCESS_SECRET=your_access_secret
+JWT_REFRESH_SECRET=your_refresh_secret
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_app_password
+EMAIL_FROM=noreply@shoestopper.com
+```
+
+### Run Development Server
+```bash
+npm run dev
+```
+
+### Create Admin User
+```bash
+npm run create-admin
+```
+
+## 📡 API Endpoints
+
+### Authentication
+- `POST /api/auth/signup` - User registration
+- `POST /api/auth/verify-otp` - Email verification
+- `POST /api/auth/login` - User login
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/logout` - User logout
+- `POST /api/auth/forgot` - Password reset request
+- `POST /api/auth/reset-password` - Reset password with OTP
+
+### Products
+- `GET /api/products` - List products with filters
+- `GET /api/products/:id` - Get product details with variants
+
+### User Management
+- `GET /api/users/profile` - Get user profile
+- `PUT /api/users/profile` - Update user profile
+- `POST /api/users/addresses` - Add address
+- `PUT /api/users/addresses/:id` - Update address
+- `DELETE /api/users/addresses/:id` - Delete address
+
+### Shopping
+- `GET /api/cart` - Get user cart
+- `POST /api/cart/add` - Add item to cart
+- `POST /api/cart/remove` - Remove item from cart
+- `GET /api/wishlist` - Get user wishlist
+- `POST /api/wishlist/add` - Add to wishlist
+- `POST /api/wishlist/remove` - Remove from wishlist
+
+### Orders
+- `POST /api/orders` - Create order
+- `GET /api/orders/my-orders` - Get user orders
+- `GET /api/orders/:orderId` - Get order details
+- `POST /api/orders/pay/initiate` - Initiate payment
+- `POST /api/orders/pay/confirm` - Confirm payment with OTP
+- `POST /api/orders/:orderId/cancel` - Cancel order
+
+### Newsletter
+- `POST /api/newsletter/subscribe` - Subscribe to newsletter
+- `GET /api/newsletter/unsubscribe/:token` - Unsubscribe
+- `GET /api/newsletter/subscribers` - Get subscribers (Admin)
+
+### Admin
+- `POST /api/admin/product` - Create product
+- `POST /api/admin/variant` - Create product variant
+- `GET /api/admin/orders` - Get all orders
+- `GET /api/admin/users` - Get all users
+
+## 🔧 Development
+
+### Scripts
+- `npm start` - Production server
+- `npm run dev` - Development with nodemon
+- `npm run create-admin` - Create admin user
+
+### Project Structure
+```
+src/
+├── config.js          # Configuration settings
+├── index.js           # Server entry point
+├── middleware/        # Authentication middleware
+├── models/            # MongoDB schemas
+├── routes/            # API route handlers
+└── utils/             # Utility functions
+```
+
+## 🚀 Deployment
+
+### Production Setup
+1. Set environment variables on hosting platform
+2. Configure MongoDB connection string
+3. Set up Gmail SMTP credentials
+4. Deploy to Render/Heroku/Railway
+
+### Live API
+- **Production**: https://shoestopper-backend.onrender.com/api
+- **Health Check**: https://shoestopper-backend.onrender.com/health
 - **Inventory Analytics**: Low stock alerts, category breakdowns, value calculations
 - **Customer Analytics**: User behavior, top customers, acquisition metrics
 - **Transaction Management**: Complete payment tracking and analysis
