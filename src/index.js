@@ -86,6 +86,7 @@ app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/sales', require('./routes/sales'));
+app.use('/api/newsletter', require('./routes/newsletter'));
 
 // Health check endpoint for hosts like Render
 app.get('/health', (req, res) => {
