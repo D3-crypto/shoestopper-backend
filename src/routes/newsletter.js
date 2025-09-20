@@ -6,7 +6,7 @@ const config = require('../config');
 
 // Create transporter for sending emails (using existing email config)
 const createTransporter = () => {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     host: config.email.host,
     port: config.email.port,
     secure: config.email.secure,
