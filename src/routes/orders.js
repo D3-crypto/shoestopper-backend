@@ -406,6 +406,14 @@ router.post('/pay/confirm', async (req, res) => {
     order.statusHistory.push({ status: 'Paid', at: new Date() });
     await order.save();
 
+    // Send payment confirmation email
+    try {
+      await sendOrderConfirmationEmail(order, user.email, user.name);
+    } catch (emailError) {
+      console.error('❌ Failed to send payment confirmation email:', emailError);
+      // Continue even if email fails
+    }
+
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
