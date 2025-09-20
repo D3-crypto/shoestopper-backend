@@ -6,6 +6,19 @@ Enterprise-grade Node.js + Express + MongoDB e-commerce API for shoe retail with
 
 ShoeStopper backend provides a complete REST API for e-commerce operations including user management, product catalog, shopping cart, order processing, and automated email notifications.
 
+## ⚠️ Important Notice - Demo Payment System
+
+**This project implements a demo/simulation payment system for educational and demonstration purposes only. It does NOT process real payments or integrate with actual payment gateways.**
+
+**Demo Payment Features:**
+- Simulated card and UPI payment flows
+- Demo OTP verification (hardcoded OTP: `123456`)
+- Mock transaction records in database
+- No real money transactions
+- No integration with Stripe, Razorpay, PayPal, or other payment providers
+
+**For Production Use:** You would need to integrate with a real payment gateway and implement proper payment security measures.
+
 ## ✨ Features
 
 ### Authentication & Security
@@ -21,15 +34,16 @@ ShoeStopper backend provides a complete REST API for e-commerce operations inclu
 - Advanced search and filtering capabilities
 
 ### Order Processing
-- Multi-payment support (COD, Card, UPI)
+- Cash on Delivery (COD) support
+- **Demo payment simulation** (Card, UPI) - *Not real payment processing*
 - Complete order lifecycle management
-- OTP-based payment confirmation
-- Automated email confirmations for orders and payments
+- Demo OTP verification for payment simulation
+- Automated email confirmations for orders
 
 ### Email System
 - Newsletter subscription with welcome emails
 - Order confirmation emails with detailed receipts
-- Payment notification emails
+- Demo payment notification emails (for simulation only)
 - HTML email templates with brand styling
 
 ### User Experience
@@ -55,7 +69,7 @@ ShoeStopper backend provides a complete REST API for e-commerce operations inclu
 - **Order**: Order management and status tracking
 - **Cart**: Shopping cart items
 - **Wishlist**: Saved products
-- **Transaction**: Payment processing records
+- **Transaction**: Demo payment processing records (not real transactions)
 - **OTP**: Verification codes with TTL
 - **RefreshToken**: Session management
 - **Subscriber**: Newsletter subscriptions
@@ -126,8 +140,8 @@ npm run create-admin
 - `POST /api/orders` - Create order
 - `GET /api/orders/my-orders` - Get user orders
 - `GET /api/orders/:orderId` - Get order details
-- `POST /api/orders/pay/initiate` - Initiate payment
-- `POST /api/orders/pay/confirm` - Confirm payment with OTP
+- `POST /api/orders/pay/initiate` - Initiate demo payment simulation
+- `POST /api/orders/pay/confirm` - Confirm demo payment with OTP (demo OTP: 123456)
 - `POST /api/orders/:orderId/cancel` - Cancel order
 
 ### Newsletter
@@ -170,9 +184,8 @@ src/
 ### Live API
 - **Production**: https://shoestopper-backend.onrender.com/api
 - **Health Check**: https://shoestopper-backend.onrender.com/health
-- **Inventory Analytics**: Low stock alerts, category breakdowns, value calculations
+- **Demo Payment Simulation**: OTP-based demo payment flow (not real payments)
 - **Customer Analytics**: User behavior, top customers, acquisition metrics
-- **Transaction Management**: Complete payment tracking and analysis
 
 ## 🏗️ **Technical Architecture**
 
@@ -191,7 +204,7 @@ src/
 - **Order**: Complete order lifecycle and tracking
 - **Cart**: Shopping cart with multi-variant support
 - **Wishlist**: Saved products for users
-- **Transaction**: Payment processing and tracking
+- **Transaction**: Demo payment processing and simulation (not real transactions)
 - **OTP**: Temporary codes for verification
 - **RefreshToken**: Secure session management
 - **Subscriber**: Newsletter subscriptions with unsubscribe tokens ✨ *NEW*
@@ -831,6 +844,8 @@ Response: 200 OK
 }
 ```
 
+**Note**: This is a demo endpoint that simulates payment initiation. No real payment gateway is contacted.
+
 #### **Confirm Payment with OTP**
 ```http
 POST /api/orders/pay/confirm
@@ -847,6 +862,8 @@ Response: 200 OK
   "ok": true
 }
 ```
+
+**Note**: This is a demo endpoint. Any OTP can be used for testing, but the frontend typically uses `123456` for demonstration.
 
 #### **Cancel Order**
 ```http
@@ -1962,8 +1979,8 @@ npm run dev
 
 ### Orders
 - `POST /api/orders/create` - Create order from cart
-- `POST /api/orders/pay/initiate` - Initiate payment (Card/UPI)
-- `POST /api/orders/pay/confirm` - Confirm payment with OTP
+- `POST /api/orders/pay/initiate` - Initiate demo payment (Card/UPI)
+- `POST /api/orders/pay/confirm` - Confirm demo payment with OTP
 - `GET /api/orders/:orderId` - Get order details
 - `POST /api/orders/:orderId/cancel` - Cancel order
 
