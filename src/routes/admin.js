@@ -8,6 +8,7 @@ const Variant = require('../models/Variant');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const Coupon = require('../models/Coupon');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // Admin login
@@ -885,6 +886,200 @@ router.get('/analytics/customers', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============ COUPON MANAGEMENT ============
+
+// Get all coupons with pagination and search
+router.get('/coupons', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '', status = 'all' } = req.query;
+    
+    let query = {};
+    if (search) {
+      query.$or = [
+        { code: { $regex: search, $options: 'i' } },
+        { title: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    if (status !== 'all') {
+      if (status === 'active') {
+        query.isActive = true;
+        query.validUntil = { $gte: new Date() };
+      } else if (status === 'inactive') {
+        query.$or = [
+          { isActive: false },
+          { validUntil: { $lt: new Date() } }
+        ];
+      }
+    }
+
+    const coupons = await Coupon.find(query)
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
+
+    const totalCoupons = await Coupon.countDocuments(query);
+
+    res.json({
+      coupons,
+      totalCoupons,
+      currentPage: parseInt(page),
+      totalPages: Math.ceil(totalCoupons / parseInt(limit))
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new coupon
+router.post('/coupons', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      code,
+      title,
+      description,
+      type,
+      value,
+      minimumAmount,
+      maximumDiscount,
+      usageLimit,
+      userLimit,
+      validFrom,
+      validUntil,
+      applicableCategories,
+      applicableProducts
+    } = req.body;
+
+    // Check if coupon code already exists
+    const existingCoupon = await Coupon.findOne({ code: code.toUpperCase() });
+    if (existingCoupon) {
+      return res.status(400).json({ error: 'Coupon code already exists' });
+    }
+
+    const coupon = new Coupon({
+      code: code.toUpperCase(),
+      title,
+      description,
+      type,
+      value,
+      minimumAmount,
+      maximumDiscount,
+      usageLimit,
+      userLimit,
+      validFrom: validFrom || new Date(),
+      validUntil,
+      applicableCategories,
+      applicableProducts,
+      createdBy: req.user.id
+    });
+
+    await coupon.save();
+    await coupon.populate('createdBy', 'name email');
+    
+    res.status(201).json(coupon);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update coupon
+router.put('/coupons/:couponId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { couponId } = req.params;
+    const updateData = { ...req.body };
+    
+    if (updateData.code) {
+      updateData.code = updateData.code.toUpperCase();
+      
+      // Check if new code conflicts with existing coupons
+      const existingCoupon = await Coupon.findOne({ 
+        code: updateData.code, 
+        _id: { $ne: couponId } 
+      });
+      if (existingCoupon) {
+        return res.status(400).json({ error: 'Coupon code already exists' });
+      }
+    }
+
+    const coupon = await Coupon.findByIdAndUpdate(
+      couponId,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('createdBy', 'name email');
+
+    if (!coupon) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    res.json(coupon);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Toggle coupon active status
+router.patch('/coupons/:couponId/toggle', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { couponId } = req.params;
+    
+    const coupon = await Coupon.findById(couponId);
+    if (!coupon) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    coupon.isActive = !coupon.isActive;
+    await coupon.save();
+    await coupon.populate('createdBy', 'name email');
+
+    res.json(coupon);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Delete coupon
+router.delete('/coupons/:couponId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { couponId } = req.params;
+    
+    const coupon = await Coupon.findByIdAndDelete(couponId);
+    if (!coupon) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    res.json({ message: 'Coupon deleted successfully' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get coupon usage statistics
+router.get('/coupons/:couponId/stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { couponId } = req.params;
+    
+    const coupon = await Coupon.findById(couponId).populate('usedBy.userId', 'name email');
+    if (!coupon) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    const stats = {
+      totalUsage: coupon.usageCount,
+      usageLimit: coupon.usageLimit,
+      remainingUsage: coupon.usageLimit ? coupon.usageLimit - coupon.usageCount : 'Unlimited',
+      uniqueUsers: coupon.usedBy.length,
+      recentUsage: coupon.usedBy.slice(-10).reverse(), // Last 10 usages
+      isValid: coupon.isValid(),
+      daysRemaining: Math.ceil((coupon.validUntil - new Date()) / (1000 * 60 * 60 * 24))
+    };
+
+    res.json(stats);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 

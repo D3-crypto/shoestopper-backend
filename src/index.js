@@ -81,12 +81,15 @@ app.use((req, res, next) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/products', require('./routes/products'));
+app.use('/api/reviews', require('./routes/reviews'));
+app.use('/api/coupons', require('./routes/coupons'));
 app.use('/api/cart', require('./routes/cart'));
 app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/sales', require('./routes/sales'));
 app.use('/api/newsletter', require('./routes/newsletter'));
+app.use('/api/cart-recovery', require('./routes/cartRecovery'));
 
 // Health check endpoint for hosts like Render
 app.get('/health', (req, res) => {
