@@ -1,7 +1,8 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Product = require('../models/Product');
-const { auth } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 const router = express.Router();
 
 // Get reviews for a product
@@ -41,7 +42,7 @@ router.get('/product/:productId', async (req, res) => {
     
     // Get rating distribution
     const ratingDistribution = await Review.aggregate([
-      { $match: { productId: require('mongoose').Types.ObjectId(productId) } },
+      { $match: { productId: new mongoose.Types.ObjectId(productId) } },
       { $group: { _id: '$rating', count: { $sum: 1 } } },
       { $sort: { _id: -1 } }
     ]);
@@ -59,7 +60,7 @@ router.get('/product/:productId', async (req, res) => {
 });
 
 // Create a review
-router.post('/', auth, async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const { productId, rating, title, comment, size, fit } = req.body;
     
@@ -102,7 +103,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // Mark review as helpful
-router.post('/:reviewId/helpful', auth, async (req, res) => {
+router.post('/:reviewId/helpful', authenticateToken, async (req, res) => {
   try {
     const { reviewId } = req.params;
     const userId = req.user.id;
@@ -132,7 +133,7 @@ router.post('/:reviewId/helpful', auth, async (req, res) => {
 });
 
 // Update review (only by review author)
-router.put('/:reviewId', auth, async (req, res) => {
+router.put('/:reviewId', authenticateToken, async (req, res) => {
   try {
     const { reviewId } = req.params;
     const { rating, title, comment, size, fit } = req.body;
@@ -162,7 +163,7 @@ router.put('/:reviewId', auth, async (req, res) => {
 });
 
 // Delete review (only by review author)
-router.delete('/:reviewId', auth, async (req, res) => {
+router.delete('/:reviewId', authenticateToken, async (req, res) => {
   try {
     const { reviewId } = req.params;
 

@@ -1,10 +1,10 @@
 const express = require('express');
 const Coupon = require('../models/Coupon');
-const { auth } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 const router = express.Router();
 
 // Validate and apply coupon
-router.post('/validate', auth, async (req, res) => {
+router.post('/validate', authenticateToken, async (req, res) => {
   try {
     const { code, cartTotal, cartItems } = req.body;
     
@@ -84,7 +84,7 @@ router.post('/validate', auth, async (req, res) => {
 });
 
 // Apply coupon (mark as used)
-router.post('/apply', auth, async (req, res) => {
+router.post('/apply', authenticateToken, async (req, res) => {
   try {
     const { couponId } = req.body;
     

@@ -3,7 +3,7 @@ const router = express.Router();
 const AbandonedCart = require('../models/AbandonedCart');
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
-const auth = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 const cartRecoveryEmail = require('../utils/cartRecoveryEmail');
 
 // Track abandoned cart (called when user leaves without purchasing)
@@ -126,7 +126,7 @@ router.get('/recover/:token', async (req, res) => {
 });
 
 // Restore cart items to user's active cart
-router.post('/restore/:token', auth, async (req, res) => {
+router.post('/restore/:token', authenticateToken, async (req, res) => {
   try {
     const { token } = req.params;
     const userId = req.user.id;
@@ -273,7 +273,7 @@ router.post('/send-reminder', async (req, res) => {
 });
 
 // Get abandoned carts statistics (admin)
-router.get('/stats', auth, async (req, res) => {
+router.get('/stats', authenticateToken, async (req, res) => {
   try {
     // Basic stats
     const totalAbandoned = await AbandonedCart.countDocuments({ isRecovered: false });
@@ -318,7 +318,7 @@ router.get('/stats', auth, async (req, res) => {
 });
 
 // Admin: Get list of abandoned carts
-router.get('/list', auth, async (req, res) => {
+router.get('/list', authenticateToken, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
