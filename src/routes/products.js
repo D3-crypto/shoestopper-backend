@@ -129,7 +129,15 @@ router.get('/', async (req, res) => {
     } = req.query;
     
     // Build product filter
-    const productFilter = { isActive: true };
+    const productFilter = {};
+    // Only filter by isActive if it exists and is false, otherwise include all products
+    if (req.query.includeInactive !== 'true') {
+      productFilter.$or = [
+        { isActive: true },
+        { isActive: { $exists: false } } // Include products without isActive field
+      ];
+    }
+    
     if (category) productFilter.categories = { $in: Array.isArray(category) ? category : [category] };
     if (q) productFilter.$text = { $search: q };
     if (featured !== undefined) productFilter.featured = featured === 'true';
