@@ -29,7 +29,8 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const allowedOrigins = [
     'http://localhost:5173', // Vite dev server for frontend
-    'http://localhost:5174', // Vite dev server for admin
+    'http://localhost:5174', // Vite dev server for admin (alternative port)
+    'http://localhost:3001', // Vite dev server for admin (current port)
     process.env.FRONTEND_URL, // Production frontend URL
     process.env.ADMIN_URL     // Production admin URL
   ].filter(Boolean); // Remove undefined values
