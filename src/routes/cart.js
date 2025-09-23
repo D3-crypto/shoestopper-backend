@@ -25,14 +25,14 @@ router.get('/', async (req, res) => {
 
 router.post('/add', async (req, res) => {
   try {
-    const { variantId, qty } = req.body;
+    const { variantId, size, qty } = req.body;
     const userId = req.user.id;
     
-    console.log(`[CART] Add item request - User: ${userId}, Variant: ${variantId}, Qty: ${qty}`);
+    console.log(`[CART] Add item request - User: ${userId}, Variant: ${variantId}, Size: ${size}, Qty: ${qty}`);
     
-    if (!variantId || !qty || qty <= 0) {
+    if (!variantId || !size || !qty || qty <= 0) {
       console.log(`[CART] Invalid fields in add request`);
-      return res.status(400).json({ error: 'Invalid fields' });
+      return res.status(400).json({ error: 'Invalid fields. variantId, size, and qty are required.' });
     }
 
     const variant = await Variant.findById(variantId);
@@ -41,8 +41,15 @@ router.post('/add', async (req, res) => {
       return res.status(404).json({ error: 'Variant not found' });
     }
     
-    if (variant.stock < qty) {
-      console.log(`[CART] Insufficient stock - Requested: ${qty}, Available: ${variant.stock}`);
+    // Find the specific size within the variant
+    const sizeInfo = variant.sizes.find(s => s.size === size);
+    if (!sizeInfo) {
+      console.log(`[CART] Size ${size} not found in variant ${variantId}`);
+      return res.status(404).json({ error: `Size ${size} not available for this color` });
+    }
+    
+    if (sizeInfo.stock < qty) {
+      console.log(`[CART] Insufficient stock - Requested: ${qty}, Available: ${sizeInfo.stock}`);
       return res.status(400).json({ error: 'Insufficient stock' });
     }
 
@@ -54,11 +61,13 @@ router.post('/add', async (req, res) => {
     const userEmail = user?.email;
     
     if (cart) {
-      const existingItem = cart.items.find(item => item.variantId.toString() === variantId);
+      const existingItem = cart.items.find(item => 
+        item.variantId.toString() === variantId && item.size === size
+      );
       if (existingItem) {
         console.log(`[CART] Item exists, updating quantity from ${existingItem.qty} to ${existingItem.qty + qty}`);
         existingItem.qty += qty;
-        if (existingItem.qty > variant.stock) {
+        if (existingItem.qty > sizeInfo.stock) {
           return res.status(400).json({ error: 'Insufficient stock for total quantity' });
         }
         cart.userEmail = userEmail;
@@ -67,7 +76,29 @@ router.post('/add', async (req, res) => {
         return res.json(cart);
       } else {
         // Add new item to existing cart
-        cart.items.push({ variantId, qty });
+        cart.items.push({ variantId, size, qty });
+        cart.userEmail = userEmail;
+        cart.abandonedEmailSent = false;
+        await cart.save();
+        return res.json(cart);
+      }
+    } else {
+      // Create new cart with first item
+      cart = new Cart({
+        userId,
+        userEmail,
+        items: [{ variantId, size, qty }],
+        abandonedEmailSent: false
+      });
+      await cart.save();
+      console.log(`[CART] Created new cart for user ${userId}`);
+      return res.json(cart);
+    }
+  } catch (error) {
+    console.error('[CART] Error adding to cart:', error);
+    res.status(500).json({ error: 'Failed to add to cart' });
+  }
+});
         cart.userEmail = userEmail;
         cart.abandonedEmailSent = false;
         await cart.save();
@@ -77,7 +108,7 @@ router.post('/add', async (req, res) => {
       // Create new cart for user
       const newCart = new Cart({
         userId,
-        items: [{ variantId, qty }],
+        items: [{ variantId, size, qty }],
         userEmail,
         abandonedEmailSent: false
       });
@@ -86,24 +117,24 @@ router.post('/add', async (req, res) => {
       console.log(`[CART] Created new cart for user: ${userId}`);
       return res.json(newCart);
     }
-  } catch (err) {
-    console.error('[CART] Error adding to cart:', err);
-    res.status(500).json({ error: 'Server error' });
+  } catch (error) {
+    console.error('[CART] Error adding to cart:', error);
+    res.status(500).json({ error: 'Failed to add to cart' });
   }
 });
 
 router.post('/remove', async (req, res) => {
   try {
-    const { variantId } = req.body;
+    const { variantId, size } = req.body;
     const userId = req.user.id;
     
-    if (!variantId) {
-      return res.status(400).json({ error: 'Variant ID required' });
+    if (!variantId || !size) {
+      return res.status(400).json({ error: 'Variant ID and size required' });
     }
     
     const cart = await Cart.findOneAndUpdate(
       { userId }, 
-      { $pull: { items: { variantId } } }, 
+      { $pull: { items: { variantId, size } } }, 
       { new: true }
     );
     

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const cartItemSchema = new mongoose.Schema({
   variantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Variant', required: true },
+  size: { type: String, required: true }, // Size within the variant
   qty: { type: Number, required: true }
 }, { _id: false });
 

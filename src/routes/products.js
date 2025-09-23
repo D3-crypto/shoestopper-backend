@@ -447,6 +447,24 @@ router.get('/search/suggestions', async (req, res) => {
   }
 });
 
+// Get variants for a specific product
+router.get('/:id/variants', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const variants = await Variant.find({ productId: id });
+    
+    if (!variants || variants.length === 0) {
+      return res.status(404).json({ error: 'No variants found for this product' });
+    }
+    
+    res.json({ success: true, variants });
+  } catch (error) {
+    console.error('Error fetching product variants:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Check stock availability for specific variant
 router.get('/:id/variants/:variantId/stock', async (req, res) => {
   try {
