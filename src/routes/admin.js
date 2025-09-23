@@ -518,6 +518,98 @@ router.delete('/variant/:variantId', authenticateToken, requireAdmin, async (req
   }
 });
 
+// Add size to variant
+router.post('/variant/:variantId/size', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { variantId } = req.params;
+    const { size, stock, price } = req.body;
+    
+    const variant = await Variant.findById(variantId);
+    if (!variant) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+
+    // Check if size already exists
+    const existingSize = variant.sizes.find(s => s.size === size);
+    if (existingSize) {
+      return res.status(400).json({ error: 'Size already exists in this variant' });
+    }
+
+    variant.sizes.push({ size, stock: stock || 0, price: price || 0 });
+    await variant.save();
+
+    res.json({ 
+      success: true, 
+      variant,
+      message: 'Size added successfully'
+    });
+  } catch (err) {
+    console.error('Error adding size:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// Update specific size in variant
+router.put('/variant/:variantId/size/:sizeValue', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { variantId, sizeValue } = req.params;
+    const { stock, price } = req.body;
+    
+    const variant = await Variant.findById(variantId);
+    if (!variant) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+
+    const sizeIndex = variant.sizes.findIndex(s => s.size === sizeValue);
+    if (sizeIndex === -1) {
+      return res.status(404).json({ error: 'Size not found in this variant' });
+    }
+
+    variant.sizes[sizeIndex].stock = stock !== undefined ? stock : variant.sizes[sizeIndex].stock;
+    variant.sizes[sizeIndex].price = price !== undefined ? price : variant.sizes[sizeIndex].price;
+    
+    await variant.save();
+
+    res.json({ 
+      success: true, 
+      variant,
+      message: 'Size updated successfully'
+    });
+  } catch (err) {
+    console.error('Error updating size:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// Delete specific size from variant
+router.delete('/variant/:variantId/size/:sizeValue', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { variantId, sizeValue } = req.params;
+    
+    const variant = await Variant.findById(variantId);
+    if (!variant) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+
+    const sizeIndex = variant.sizes.findIndex(s => s.size === sizeValue);
+    if (sizeIndex === -1) {
+      return res.status(404).json({ error: 'Size not found in this variant' });
+    }
+
+    variant.sizes.splice(sizeIndex, 1);
+    await variant.save();
+
+    res.json({ 
+      success: true, 
+      variant,
+      message: 'Size deleted successfully'
+    });
+  } catch (err) {
+    console.error('Error deleting size:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
 // List all orders for admin with advanced filters
 router.get('/orders', async (req, res) => {
   try {
