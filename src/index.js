@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const config = require('./config');
+const cron = require('node-cron');
 
 const app = express();
 app.use(express.json());
@@ -120,12 +121,99 @@ async function start() {
       console.log(`[SERVER]   - Orders: /api/orders/*`);
       console.log(`[SERVER]   - Admin: /api/admin/*`);
       console.log(`[SERVER] 🎯 Ready to receive requests!\n`);
+      
+      // Start abandoned cart email scheduler (runs daily at 10 AM)
+      startAbandonedCartScheduler();
     });
   } catch (error) {
     console.error(`[DATABASE] ❌ Connection failed:`, error.message);
     throw error;
   }
 }
+
+// Abandoned cart email functionality
+const sendAbandonedCartEmails = async () => {
+  try {
+    console.log('🔍 Checking for abandoned carts...');
+    
+    const Cart = require('./models/Cart');
+    const mailer = require('./utils/mailer');
+    
+    // Find carts abandoned for more than 24 hours
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    
+    const abandonedCarts = await Cart.find({
+      'items.0': { $exists: true },
+      lastActivity: { $lt: oneDayAgo },
+      abandonedEmailSent: { $ne: true },
+      userEmail: { $exists: true, $ne: null }
+    }).populate('items.variantId');
+    
+    console.log(`📧 Found ${abandonedCarts.length} abandoned carts`);
+    
+    for (const cart of abandonedCarts) {
+      try {
+        const items = cart.items.map(item => ({
+          name: item.variantId.productId?.title || 'Product',
+          color: item.variantId.color,
+          size: item.variantId.size,
+          quantity: item.qty,
+          price: item.variantId.price
+        }));
+        
+        const totalValue = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>👟 Your Cart is Waiting!</h2>
+            <p>Don't let these amazing shoes slip away!</p>
+            <div style="border: 1px solid #ddd; padding: 20px; margin: 20px 0;">
+              ${items.map(item => `
+                <div style="padding: 10px; border-bottom: 1px solid #eee;">
+                  <strong>${item.name}</strong><br>
+                  ${item.color} • Size ${item.size} • Qty: ${item.quantity}<br>
+                  <span style="color: #666;">$${item.price}</span>
+                </div>
+              `).join('')}
+              <div style="padding: 10px; font-weight: bold; font-size: 18px;">
+                Total: $${totalValue.toFixed(2)}
+              </div>
+            </div>
+            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/cart" 
+               style="background: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+              Complete Your Purchase
+            </a>
+          </div>
+        `;
+        
+        await mailer.sendEmail({
+          to: cart.userEmail,
+          subject: '👟 Your Cart is Waiting - Complete Your Purchase!',
+          html: emailHtml
+        });
+        
+        cart.abandonedEmailSent = true;
+        await cart.save();
+        
+        console.log(`✅ Sent abandoned cart email to: ${cart.userEmail}`);
+      } catch (error) {
+        console.error(`❌ Failed to send email to ${cart.userEmail}:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error('💥 Error in abandoned cart process:', error);
+  }
+};
+
+const startAbandonedCartScheduler = () => {
+  // Run daily at 10:00 AM
+  cron.schedule('0 10 * * *', () => {
+    console.log('🕐 Running abandoned cart email check...');
+    sendAbandonedCartEmails();
+  });
+  
+  console.log('📅 Abandoned cart email scheduler started (daily at 10 AM)');
+};
 
 start().catch(err => {
   console.error('Failed to start', err);

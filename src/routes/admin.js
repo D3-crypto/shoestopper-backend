@@ -105,6 +105,80 @@ router.get('/variants', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// Get all products (for admin panel)
+router.get('/products', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const products = await Product.find({}).lean();
+    // Get variants for each product
+    const productsWithVariants = await Promise.all(
+      products.map(async (product) => {
+        const variants = await Variant.find({ productId: product._id }).lean();
+        return { ...product, variants };
+      })
+    );
+    
+    res.json({
+      success: true,
+      products: productsWithVariants
+    });
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Verify user (for admin panel)
+router.patch('/users/:userId/verify', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { verified: true },
+      { new: true }
+    ).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      success: true,
+      message: 'User verified successfully',
+      user
+    });
+  } catch (error) {
+    console.error('Error verifying user:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get user details with orders (for admin panel)
+router.get('/users/:userId/details', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId).select('-password').lean();
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get user's orders
+    const orders = await Order.find({ userId }).lean();
+    
+    res.json({
+      success: true,
+      user: {
+        ...user,
+        orders
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Update admin profile
 router.put('/profile', authenticateToken, async (req, res) => {
   try {
@@ -184,24 +258,79 @@ router.put('/change-password', authenticateToken, async (req, res) => {
 // Create product
 router.post('/product', async (req, res) => {
   try {
-    const { title, description, price, categories, images } = req.body;
-    const p = await Product.create({ title, description, price, categories, images });
-    res.json(p);
+    const { name, title, description, price, categories, images, featured, brand, variants } = req.body;
+    
+    // Create the product
+    const product = new Product({
+      title: title || name, // Support both title and name fields
+      description,
+      price: price || 0,
+      categories: categories || [],
+      images: images || [],
+      featured: featured || false,
+      brand: brand || ''
+    });
+    
+    const savedProduct = await product.save();
+
+    // Create variants with new structure (color variants with sizes array)
+    const variantDocuments = [];
+    if (variants && variants.length > 0) {
+      for (const variant of variants) {
+        const variantDoc = new Variant({
+          productId: savedProduct._id,
+          color: variant.color,
+          price: variant.price || null,
+          images: variant.images || [],
+          sizes: variant.sizes || [] // Array of {size, stock, price} objects
+        });
+        variantDocuments.push(variantDoc);
+      }
+      await Variant.insertMany(variantDocuments);
+    }
+
+    res.status(201).json({ 
+      success: true, 
+      product: savedProduct,
+      message: 'Product created successfully'
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error creating product:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
 // Create variant
 router.post('/variant', async (req, res) => {
   try {
-    const { productId, color, size, stock, images } = req.body;
-    const v = await Variant.create({ productId, color, size, stock, images });
-    res.json(v);
+    const { productId, color, price, images, sizes } = req.body;
+    
+    // Check if variant with this color already exists for this product
+    const existingVariant = await Variant.findOne({ productId, color });
+    
+    if (existingVariant) {
+      return res.status(400).json({ 
+        error: 'Variant with this color already exists for this product' 
+      });
+    }
+    
+    const variant = new Variant({
+      productId,
+      color,
+      price: price || null,
+      images: images || [],
+      sizes: sizes || [] // Array of {size, stock, price} objects
+    });
+    
+    const savedVariant = await variant.save();
+    res.status(201).json({ 
+      success: true, 
+      variant: savedVariant,
+      message: 'Variant created successfully'
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error creating variant:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 

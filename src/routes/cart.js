@@ -3,40 +3,17 @@ const router = express.Router();
 const Cart = require('../models/Cart');
 const Variant = require('../models/Variant');
 const User = require('../models/User');
-const crypto = require('crypto');
+const { authenticateToken } = require('../middleware/auth');
 
-// Helper function to generate session ID
-const generateSessionId = () => {
-  return crypto.randomBytes(32).toString('hex');
-};
-
-// Helper function to get cart identifier
-const getCartIdentifier = (req) => {
-  const userId = req.user?.id; // From auth middleware if logged in
-  const sessionId = req.headers['x-session-id'] || req.query.sessionId || req.body.sessionId;
-  
-  return { userId, sessionId };
-};
-
-// Generate session ID for anonymous users
-router.post('/session', (req, res) => {
-  const sessionId = generateSessionId();
-  console.log(`[CART] Generated new session ID: ${sessionId}`);
-  res.json({ sessionId });
-});
+// All cart operations now require authentication
+router.use(authenticateToken);
 
 router.get('/', async (req, res) => {
   try {
-    const { userId, sessionId } = getCartIdentifier(req);
-    console.log(`[CART] Get cart request - User: ${userId}, Session: ${sessionId}`);
+    const userId = req.user.id;
+    console.log(`[CART] Get cart request for user: ${userId}`);
     
-    if (!userId && !sessionId) {
-      console.log(`[CART] No user or session identifier provided`);
-      return res.status(400).json({ error: 'No cart identifier provided' });
-    }
-    
-    const query = userId ? { userId } : { sessionId };
-    const cart = await Cart.findOne(query).populate('items.variantId');
+    const cart = await Cart.findOne({ userId }).populate('items.variantId');
     
     console.log(`[CART] Cart retrieved with ${cart ? cart.items.length : 0} items`);
     res.json(cart || { items: [] });
@@ -49,11 +26,11 @@ router.get('/', async (req, res) => {
 router.post('/add', async (req, res) => {
   try {
     const { variantId, qty } = req.body;
-    const { userId, sessionId } = getCartIdentifier(req);
+    const userId = req.user.id;
     
-    console.log(`[CART] Add item request - User: ${userId}, Session: ${sessionId}, Variant: ${variantId}, Qty: ${qty}`);
+    console.log(`[CART] Add item request - User: ${userId}, Variant: ${variantId}, Qty: ${qty}`);
     
-    if ((!userId && !sessionId) || !variantId || !qty || qty <= 0) {
+    if (!variantId || !qty || qty <= 0) {
       console.log(`[CART] Invalid fields in add request`);
       return res.status(400).json({ error: 'Invalid fields' });
     }
@@ -69,16 +46,12 @@ router.post('/add', async (req, res) => {
       return res.status(400).json({ error: 'Insufficient stock' });
     }
 
-    // Find cart by userId or sessionId
-    const query = userId ? { userId } : { sessionId };
-    let cart = await Cart.findOne(query);
+    // Find user's cart
+    let cart = await Cart.findOne({ userId });
     
-    // Get user email if logged in for abandoned cart emails
-    let userEmail = null;
-    if (userId) {
-      const user = await User.findById(userId);
-      userEmail = user?.email;
-    }
+    // Get user email for abandoned cart emails
+    const user = await User.findById(userId);
+    const userEmail = user?.email;
     
     if (cart) {
       const existingItem = cart.items.find(item => item.variantId.toString() === variantId);
@@ -88,32 +61,29 @@ router.post('/add', async (req, res) => {
         if (existingItem.qty > variant.stock) {
           return res.status(400).json({ error: 'Insufficient stock for total quantity' });
         }
-        cart.userEmail = userEmail; // Update email for abandoned cart
+        cart.userEmail = userEmail;
+        cart.abandonedEmailSent = false; // Reset email flag when cart is updated
         await cart.save();
         return res.json(cart);
       } else {
         // Add new item to existing cart
         cart.items.push({ variantId, qty });
         cart.userEmail = userEmail;
+        cart.abandonedEmailSent = false;
         await cart.save();
         return res.json(cart);
       }
     } else {
-      // Create new cart
-      const cartData = {
+      // Create new cart for user
+      const newCart = new Cart({
+        userId,
         items: [{ variantId, qty }],
-        userEmail
-      };
+        userEmail,
+        abandonedEmailSent: false
+      });
       
-      if (userId) {
-        cartData.userId = userId;
-      } else {
-        cartData.sessionId = sessionId;
-      }
-      
-      const newCart = new Cart(cartData);
       await newCart.save();
-      console.log(`[CART] Created new cart for ${userId ? 'user' : 'session'}: ${userId || sessionId}`);
+      console.log(`[CART] Created new cart for user: ${userId}`);
       return res.json(newCart);
     }
   } catch (err) {
@@ -125,15 +95,14 @@ router.post('/add', async (req, res) => {
 router.post('/remove', async (req, res) => {
   try {
     const { variantId } = req.body;
-    const { userId, sessionId } = getCartIdentifier(req);
+    const userId = req.user.id;
     
-    if ((!userId && !sessionId) || !variantId) {
-      return res.status(400).json({ error: 'Missing fields' });
+    if (!variantId) {
+      return res.status(400).json({ error: 'Variant ID required' });
     }
     
-    const query = userId ? { userId } : { sessionId };
     const cart = await Cart.findOneAndUpdate(
-      query, 
+      { userId }, 
       { $pull: { items: { variantId } } }, 
       { new: true }
     );
@@ -141,6 +110,23 @@ router.post('/remove', async (req, res) => {
     res.json(cart || { items: [] });
   } catch (err) {
     console.error('[CART] Error removing from cart:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/clear', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const cart = await Cart.findOneAndUpdate(
+      { userId },
+      { items: [] },
+      { new: true }
+    );
+    
+    res.json(cart || { items: [] });
+  } catch (err) {
+    console.error('[CART] Error clearing cart:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
