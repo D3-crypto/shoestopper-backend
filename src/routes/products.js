@@ -192,7 +192,7 @@ router.get('/', async (req, res) => {
     if (color || size) {
       const variantFilter = {};
       if (color) variantFilter.color = { $in: Array.isArray(color) ? color : [color] };
-      if (size) variantFilter.size = { $in: Array.isArray(size) ? size : [size] };
+      if (size) variantFilter['sizes.size'] = { $in: Array.isArray(size) ? size : [size] };
       
       const variants = await Variant.find(variantFilter).distinct('productId');
       products = products.filter(p => variants.some(vid => vid.toString() === p._id.toString()));
@@ -205,11 +205,31 @@ router.get('/', async (req, res) => {
     for (let product of products) {
       const variants = await Variant.find({ productId: product._id });
       product.variants = variants;
-      product.availableSizes = [...new Set(variants.map(v => v.size))];
-      product.availableColors = [...new Set(variants.map(v => v.color))];
-      product.inStock = variants.some(v => v.stock > 0);
-      product.lowestPrice = Math.min(...variants.map(v => v.price));
-      product.highestPrice = Math.max(...variants.map(v => v.price));
+      
+      // Get all available sizes from all variants
+      const allSizes = variants.flatMap(v => v.sizes ? v.sizes.map(s => s.size) : []);
+      product.availableSizes = [...new Set(allSizes.filter(size => size !== null && size !== undefined))];
+      
+      // Get all available colors
+      product.availableColors = [...new Set(variants.map(v => v.color).filter(color => color))];
+      
+      // Check if any variant has stock
+      product.inStock = variants.some(v => v.sizes && v.sizes.some(s => s.stock > 0));
+      
+      // Get price range from all sizes in all variants
+      const allPrices = variants.flatMap(v => v.sizes ? v.sizes.map(s => s.price) : []).filter(price => price && price > 0);
+      if (allPrices.length > 0) {
+        product.lowestPrice = Math.min(...allPrices);
+        product.highestPrice = Math.max(...allPrices);
+      } else {
+        product.lowestPrice = product.price || 0;
+        product.highestPrice = product.price || 0;
+      }
+      
+      // Calculate total stock across all variants
+      product.totalStock = variants.reduce((total, v) => {
+        return total + (v.sizes ? v.sizes.reduce((sum, s) => sum + (s.stock || 0), 0) : 0);
+      }, 0);
     }
     
     res.json({ 
@@ -465,21 +485,44 @@ router.get('/:id/variants', async (req, res) => {
   }
 });
 
-// Check stock availability for specific variant
+// Check stock availability for specific variant and size
 router.get('/:id/variants/:variantId/stock', async (req, res) => {
   try {
+    const { size } = req.query; // Size is now passed as query parameter
     const variant = await Variant.findById(req.params.variantId);
+    
     if (!variant) {
       return res.status(404).json({ error: 'Variant not found' });
     }
     
-    res.json({
-      success: true,
-      inStock: variant.stock > 0,
-      stockCount: variant.stock,
-      size: variant.size,
-      color: variant.color
-    });
+    if (size) {
+      // Check specific size stock
+      const sizeInfo = variant.sizes.find(s => s.size === size);
+      if (!sizeInfo) {
+        return res.status(404).json({ error: 'Size not found' });
+      }
+      
+      res.json({
+        success: true,
+        inStock: sizeInfo.stock > 0,
+        stockCount: sizeInfo.stock,
+        size: sizeInfo.size,
+        color: variant.color,
+        price: sizeInfo.price
+      });
+    } else {
+      // Return all sizes for this variant
+      res.json({
+        success: true,
+        color: variant.color,
+        sizes: variant.sizes.map(s => ({
+          size: s.size,
+          inStock: s.stock > 0,
+          stockCount: s.stock,
+          price: s.price
+        }))
+      });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
