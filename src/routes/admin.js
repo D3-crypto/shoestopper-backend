@@ -300,6 +300,88 @@ router.post('/product', async (req, res) => {
   }
 });
 
+// Update product
+router.put('/product/:productId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { name, title, description, price, categories, images, featured, brand, variants } = req.body;
+    
+    // Update the product
+    const updatedProduct = await Product.findByIdAndUpdate(
+      productId,
+      {
+        title: title || name,
+        description,
+        price: price || 0,
+        categories: categories || [],
+        images: images || [],
+        featured: featured || false,
+        brand: brand || ''
+      },
+      { new: true }
+    );
+
+    if (!updatedProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Update variants if provided
+    if (variants && variants.length > 0) {
+      // Delete existing variants
+      await Variant.deleteMany({ productId });
+      
+      // Create new variants
+      const variantDocuments = [];
+      for (const variant of variants) {
+        const variantDoc = new Variant({
+          productId: updatedProduct._id,
+          color: variant.color,
+          price: variant.price || null,
+          images: variant.images || [],
+          sizes: variant.sizes || []
+        });
+        variantDocuments.push(variantDoc);
+      }
+      await Variant.insertMany(variantDocuments);
+    }
+
+    res.json({ 
+      success: true, 
+      product: updatedProduct,
+      message: 'Product updated successfully'
+    });
+  } catch (err) {
+    console.error('Error updating product:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// Delete product
+router.delete('/product/:productId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    
+    // Delete the product
+    const deletedProduct = await Product.findByIdAndDelete(productId);
+    
+    if (!deletedProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Delete associated variants
+    await Variant.deleteMany({ productId });
+
+    res.json({ 
+      success: true, 
+      message: 'Product deleted successfully',
+      product: deletedProduct
+    });
+  } catch (err) {
+    console.error('Error deleting product:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
 // Create variant
 router.post('/variant', async (req, res) => {
   try {
@@ -379,6 +461,60 @@ router.put('/variant/:variantId/stock', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update variant
+router.put('/variant/:variantId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { variantId } = req.params;
+    const { color, price, images, sizes } = req.body;
+    
+    const updatedVariant = await Variant.findByIdAndUpdate(
+      variantId,
+      {
+        color,
+        price: price || null,
+        images: images || [],
+        sizes: sizes || []
+      },
+      { new: true }
+    );
+
+    if (!updatedVariant) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+
+    res.json({ 
+      success: true, 
+      variant: updatedVariant,
+      message: 'Variant updated successfully'
+    });
+  } catch (err) {
+    console.error('Error updating variant:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// Delete variant
+router.delete('/variant/:variantId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { variantId } = req.params;
+    
+    const deletedVariant = await Variant.findByIdAndDelete(variantId);
+    
+    if (!deletedVariant) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Variant deleted successfully',
+      variant: deletedVariant
+    });
+  } catch (err) {
+    console.error('Error deleting variant:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
