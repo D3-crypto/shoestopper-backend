@@ -105,21 +105,139 @@ router.get('/variants', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// Get all products (for admin panel)
+// Get all products (for admin panel) with advanced filtering
 router.get('/products', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const products = await Product.find({}).lean();
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      brand,
+      category,
+      featured,
+      inStock,
+      priceMin,
+      priceMax,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build filter object
+    let filter = {};
+
+    // Search filter (title, brand, description)
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { brand: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Brand filter
+    if (brand) {
+      filter.brand = { $regex: brand, $options: 'i' };
+    }
+
+    // Category filter
+    if (category) {
+      filter.categories = { $in: [category] };
+    }
+
+    // Featured filter
+    if (featured !== undefined) {
+      filter.featured = featured === 'true';
+    }
+
+    // Price range filter
+    if (priceMin || priceMax) {
+      filter.price = {};
+      if (priceMin) filter.price.$gte = parseFloat(priceMin);
+      if (priceMax) filter.price.$lte = parseFloat(priceMax);
+    }
+
+    // Pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort options
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    const products = await Product.find(filter)
+      .sort(sortOptions)
+      .limit(limitNum)
+      .skip(skip)
+      .lean();
+
     // Get variants for each product
     const productsWithVariants = await Promise.all(
       products.map(async (product) => {
         const variants = await Variant.find({ productId: product._id }).lean();
-        return { ...product, variants };
+        
+        // Add calculated fields
+        let totalStock = 0;
+        let lowestPrice = null;
+        let highestPrice = null;
+        
+        variants.forEach(variant => {
+          if (variant.sizes) {
+            variant.sizes.forEach(size => {
+              totalStock += size.stock || 0;
+              const price = size.price || 0;
+              if (lowestPrice === null || price < lowestPrice) lowestPrice = price;
+              if (highestPrice === null || price > highestPrice) highestPrice = price;
+            });
+          }
+        });
+
+        return { 
+          ...product, 
+          variants,
+          totalStock,
+          lowestPrice,
+          highestPrice,
+          inStock: totalStock > 0
+        };
       })
     );
-    
+
+    // Apply stock filter after calculating stock
+    let filteredProducts = productsWithVariants;
+    if (inStock !== undefined) {
+      const stockFilter = inStock === 'true';
+      filteredProducts = productsWithVariants.filter(product => 
+        stockFilter ? product.inStock : !product.inStock
+      );
+    }
+
+    // Get total count for pagination
+    const totalProducts = await Product.countDocuments(filter);
+    const totalPages = Math.ceil(totalProducts / limitNum);
+
     res.json({
       success: true,
-      products: productsWithVariants
+      products: filteredProducts,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalProducts,
+        limit: limitNum,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      },
+      filters: {
+        search,
+        brand,
+        category,
+        featured,
+        inStock,
+        priceMin,
+        priceMax,
+        sortBy,
+        sortOrder
+      }
     });
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -853,6 +971,201 @@ router.get('/users/:userId/orders', async (req, res) => {
   }
 });
 
+// Block/Unblock user account
+router.put('/users/:userId/block', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    user.isBlocked = !user.isBlocked;
+    user.blockedAt = user.isBlocked ? new Date() : null;
+    user.blockedBy = user.isBlocked ? req.user.id : null;
+    
+    await user.save();
+    
+    res.json({
+      message: `User ${user.isBlocked ? 'blocked' : 'unblocked'} successfully`,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isBlocked: user.isBlocked,
+        blockedAt: user.blockedAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Verify/Unverify user email
+router.put('/users/:userId/verify', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    user.isVerified = !user.isVerified;
+    user.verifiedAt = user.isVerified ? new Date() : null;
+    user.verifiedBy = user.isVerified ? req.user.id : null;
+    
+    await user.save();
+    
+    res.json({
+      message: `User email ${user.isVerified ? 'verified' : 'unverified'} successfully`,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isVerified: user.isVerified,
+        verifiedAt: user.verifiedAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update user details (admin only)
+router.put('/users/:userId', async (req, res) => {
+  try {
+    const { name, email, role } = req.body;
+    
+    const user = await User.findById(req.params.userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Check if email already exists (if being changed)
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ error: 'Email already in use' });
+      }
+    }
+    
+    // Update fields
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (role) user.role = role;
+    
+    user.updatedAt = new Date();
+    await user.save();
+    
+    res.json({
+      message: 'User updated successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+        isBlocked: user.isBlocked,
+        updatedAt: user.updatedAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete user account (admin only - soft delete)
+router.delete('/users/:userId', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Soft delete - mark as deleted instead of removing
+    user.isDeleted = true;
+    user.deletedAt = new Date();
+    user.deletedBy = req.user.id;
+    
+    await user.save();
+    
+    res.json({
+      message: 'User account deleted successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isDeleted: user.isDeleted,
+        deletedAt: user.deletedAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get user activity log
+router.get('/users/:userId/activity', async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    
+    // Pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    
+    // Get user's orders for activity timeline
+    const orders = await Order.find({ userId: req.params.userId })
+      .sort({ createdAt: -1 })
+      .limit(limitNum)
+      .skip(skip)
+      .select('orderId status totalAmount createdAt paymentMethod');
+    
+    // Get user's reviews
+    const reviews = await Review.find({ userId: req.params.userId })
+      .populate('productId', 'title')
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('rating comment createdAt productId');
+    
+    // Combine and sort activities
+    const activities = [
+      ...orders.map(order => ({
+        type: 'order',
+        date: order.createdAt,
+        description: `Order ${order.orderId} - ${order.status}`,
+        amount: order.totalAmount,
+        data: order
+      })),
+      ...reviews.map(review => ({
+        type: 'review',
+        date: review.createdAt,
+        description: `Reviewed ${review.productId?.title}`,
+        rating: review.rating,
+        data: review
+      }))
+    ].sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    res.json({
+      activities: activities.slice(0, limitNum),
+      pagination: {
+        currentPage: pageNum,
+        totalActivities: activities.length,
+        limit: limitNum
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin Transaction Management Routes
 
 // List all transactions with filters
@@ -938,6 +1251,206 @@ router.get('/transactions/:transactionId', async (req, res) => {
     }
     
     res.json(transaction);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update transaction status
+router.put('/transactions/:transactionId/status', async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+    
+    if (!['pending', 'completed', 'failed', 'refunded', 'cancelled'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid transaction status' });
+    }
+    
+    const transaction = await Transaction.findOne({ transactionId: req.params.transactionId });
+    
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    transaction.status = status;
+    transaction.adminNotes = notes || transaction.adminNotes;
+    transaction.updatedAt = new Date();
+    transaction.updatedBy = req.user.id;
+    
+    await transaction.save();
+    
+    res.json({
+      message: 'Transaction status updated successfully',
+      transaction
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Process refund for transaction
+router.post('/transactions/:transactionId/refund', async (req, res) => {
+  try {
+    const { amount, reason } = req.body;
+    
+    const transaction = await Transaction.findOne({ transactionId: req.params.transactionId });
+    
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (transaction.status !== 'completed') {
+      return res.status(400).json({ error: 'Can only refund completed transactions' });
+    }
+    
+    const refundAmount = amount || transaction.amount;
+    
+    if (refundAmount > transaction.amount) {
+      return res.status(400).json({ error: 'Refund amount cannot exceed transaction amount' });
+    }
+    
+    // Update transaction
+    transaction.status = 'refunded';
+    transaction.refundAmount = refundAmount;
+    transaction.refundReason = reason;
+    transaction.refundedAt = new Date();
+    transaction.refundedBy = req.user.id;
+    
+    await transaction.save();
+    
+    // Update related order status
+    if (transaction.orderId) {
+      await Order.findByIdAndUpdate(transaction.orderId, {
+        status: 'Refunded',
+        refundAmount: refundAmount,
+        refundReason: reason,
+        refundedAt: new Date()
+      });
+    }
+    
+    res.json({
+      message: 'Refund processed successfully',
+      transaction,
+      refundAmount
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get transaction statistics
+router.get('/transactions/stats', async (req, res) => {
+  try {
+    const { period = 'month' } = req.query;
+    
+    // Set date range based on period
+    let dateFilter = {};
+    const now = new Date();
+    
+    switch (period) {
+      case 'today':
+        dateFilter.createdAt = {
+          $gte: new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        };
+        break;
+      case 'week':
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        dateFilter.createdAt = { $gte: weekAgo };
+        break;
+      case 'month':
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        dateFilter.createdAt = { $gte: monthAgo };
+        break;
+      case 'year':
+        const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        dateFilter.createdAt = { $gte: yearAgo };
+        break;
+    }
+    
+    // Transaction statistics
+    const transactionStats = await Transaction.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: null,
+          totalTransactions: { $sum: 1 },
+          totalAmount: { $sum: '$amount' },
+          averageAmount: { $avg: '$amount' },
+          completedTransactions: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          },
+          failedTransactions: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+          },
+          refundedTransactions: {
+            $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, 1, 0] }
+          },
+          totalRefundAmount: {
+            $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, '$refundAmount', 0] }
+          }
+        }
+      }
+    ]);
+    
+    // Payment method breakdown
+    const paymentMethods = await Transaction.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: '$method',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$amount' }
+        }
+      }
+    ]);
+    
+    // Success rate by day
+    const dailyStats = await Transaction.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+          },
+          totalTransactions: { $sum: 1 },
+          successfulTransactions: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          },
+          totalAmount: { $sum: '$amount' }
+        }
+      },
+      {
+        $project: {
+          date: '$_id.date',
+          totalTransactions: 1,
+          successfulTransactions: 1,
+          successRate: {
+            $multiply: [
+              { $divide: ['$successfulTransactions', '$totalTransactions'] },
+              100
+            ]
+          },
+          totalAmount: 1
+        }
+      },
+      { $sort: { date: 1 } }
+    ]);
+    
+    res.json({
+      overview: transactionStats[0] || {
+        totalTransactions: 0,
+        totalAmount: 0,
+        averageAmount: 0,
+        completedTransactions: 0,
+        failedTransactions: 0,
+        refundedTransactions: 0,
+        totalRefundAmount: 0
+      },
+      paymentMethods,
+      dailyStats
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -1440,4 +1953,459 @@ router.get('/coupons/:couponId/stats', authenticateToken, requireAdmin, async (r
   }
 });
 
+// ============ NEWSLETTER MANAGEMENT ============
+
+// Get all newsletter subscribers
+router.get('/newsletter/subscribers', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search } = req.query;
+    
+    let query = {};
+    if (search) {
+      query.email = { $regex: search, $options: 'i' };
+    }
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const subscribers = await Subscriber.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limitNum)
+      .skip(skip);
+
+    const totalSubscribers = await Subscriber.countDocuments(query);
+    const totalPages = Math.ceil(totalSubscribers / limitNum);
+
+    res.json({
+      success: true,
+      subscribers,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalSubscribers,
+        limit: limitNum,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching newsletter subscribers:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete newsletter subscriber
+router.delete('/newsletter/subscribers/:subscriberId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { subscriberId } = req.params;
+    
+    const deletedSubscriber = await Subscriber.findByIdAndDelete(subscriberId);
+    
+    if (!deletedSubscriber) {
+      return res.status(404).json({ error: 'Subscriber not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Subscriber deleted successfully',
+      subscriber: deletedSubscriber
+    });
+  } catch (error) {
+    console.error('Error deleting subscriber:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Send newsletter to all subscribers
+router.post('/newsletter/send', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { subject, content, template = 'newsletter' } = req.body;
+
+    if (!subject || !content) {
+      return res.status(400).json({ error: 'Subject and content are required' });
+    }
+
+    // Get all subscribers
+    const subscribers = await Subscriber.find({});
+    
+    // Import mailer utility
+    const { sendEmail } = require('../utils/mailer');
+    
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Send emails to all subscribers
+    for (const subscriber of subscribers) {
+      try {
+        await sendEmail(
+          subscriber.email,
+          subject,
+          content,
+          `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background-color: #f8f9fa; padding: 20px; text-align: center;">
+                <h1 style="color: #333;">ShoeStopper Newsletter</h1>
+              </div>
+              <div style="padding: 20px;">
+                <h2 style="color: #333;">${subject}</h2>
+                <div style="line-height: 1.6; color: #555;">
+                  ${content.replace(/\n/g, '<br>')}
+                </div>
+              </div>
+              <div style="background-color: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+                <p>You're receiving this email because you subscribed to ShoeStopper newsletter.</p>
+                <p>If you no longer wish to receive these emails, please contact us.</p>
+              </div>
+            </div>
+          `
+        );
+        successCount++;
+      } catch (emailError) {
+        console.error(`Failed to send email to ${subscriber.email}:`, emailError);
+        failureCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Newsletter sent successfully',
+      stats: {
+        totalSubscribers: subscribers.length,
+        successCount,
+        failureCount
+      }
+    });
+  } catch (error) {
+    console.error('Error sending newsletter:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Newsletter statistics
+router.get('/newsletter/stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const totalSubscribers = await Subscriber.countDocuments();
+    
+    // Subscribers by month
+    const subscribersByMonth = await Subscriber.aggregate([
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+      { $limit: 12 }
+    ]);
+
+    // Recent subscribers
+    const recentSubscribers = await Subscriber.find({})
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .select('email createdAt');
+
+    res.json({
+      success: true,
+      stats: {
+        totalSubscribers,
+        subscribersByMonth,
+        recentSubscribers
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching newsletter stats:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;
+
+// ============ DASHBOARD ANALYTICS ENDPOINTS ============
+
+// Dashboard overview statistics
+router.get('/dashboard/stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    // Get current date for time-based queries
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const startOfMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Total users
+    const totalUsers = await User.countDocuments();
+    const newUsersToday = await User.countDocuments({ createdAt: { $gte: startOfToday } });
+    const newUsersWeek = await User.countDocuments({ createdAt: { $gte: startOfWeek } });
+
+    // Total products and variants
+    const totalProducts = await Product.countDocuments();
+    const totalVariants = await Variant.countDocuments();
+
+    // Order statistics
+    const totalOrders = await Order.countDocuments();
+    const ordersToday = await Order.countDocuments({ createdAt: { $gte: startOfToday } });
+    const ordersWeek = await Order.countDocuments({ createdAt: { $gte: startOfWeek } });
+    const ordersMonth = await Order.countDocuments({ createdAt: { $gte: startOfMonth } });
+
+    // Revenue statistics
+    const revenueStats = await Order.aggregate([
+      { $match: { status: { $in: ['Approved', 'Shipped', 'Delivered'] } } },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$totalAmount' },
+          averageOrderValue: { $avg: '$totalAmount' }
+        }
+      }
+    ]);
+
+    const revenueToday = await Order.aggregate([
+      { 
+        $match: { 
+          createdAt: { $gte: startOfToday },
+          status: { $in: ['Approved', 'Shipped', 'Delivered'] }
+        }
+      },
+      { $group: { _id: null, revenue: { $sum: '$totalAmount' } } }
+    ]);
+
+    const revenueWeek = await Order.aggregate([
+      { 
+        $match: { 
+          createdAt: { $gte: startOfWeek },
+          status: { $in: ['Approved', 'Shipped', 'Delivered'] }
+        }
+      },
+      { $group: { _id: null, revenue: { $sum: '$totalAmount' } } }
+    ]);
+
+    // Order status breakdown
+    const ordersByStatus = await Order.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Top selling products (last 30 days)
+    const topProducts = await Order.aggregate([
+      { 
+        $match: { 
+          createdAt: { $gte: startOfMonth },
+          status: { $in: ['Approved', 'Shipped', 'Delivered'] }
+        }
+      },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.productId',
+          totalSold: { $sum: '$items.qty' },
+          revenue: { $sum: { $multiply: ['$items.qty', '$items.price'] } }
+        }
+      },
+      { $sort: { totalSold: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      { $unwind: '$product' }
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        users: {
+          total: totalUsers,
+          newToday: newUsersToday,
+          newThisWeek: newUsersWeek
+        },
+        products: {
+          total: totalProducts,
+          totalVariants: totalVariants
+        },
+        orders: {
+          total: totalOrders,
+          today: ordersToday,
+          thisWeek: ordersWeek,
+          thisMonth: ordersMonth
+        },
+        revenue: {
+          total: revenueStats[0]?.totalRevenue || 0,
+          averageOrderValue: revenueStats[0]?.averageOrderValue || 0,
+          today: revenueToday[0]?.revenue || 0,
+          thisWeek: revenueWeek[0]?.revenue || 0
+        },
+        ordersByStatus,
+        topProducts
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Sales data for charts
+router.get('/dashboard/sales', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { period = '7d' } = req.query;
+    
+    let dateFilter = {};
+    let groupBy = {};
+    const now = new Date();
+
+    switch (period) {
+      case '24h':
+        dateFilter = { createdAt: { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) } };
+        groupBy = {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+          day: { $dayOfMonth: '$createdAt' },
+          hour: { $hour: '$createdAt' }
+        };
+        break;
+      case '7d':
+        dateFilter = { createdAt: { $gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) } };
+        groupBy = {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+          day: { $dayOfMonth: '$createdAt' }
+        };
+        break;
+      case '30d':
+        dateFilter = { createdAt: { $gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) } };
+        groupBy = {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+          day: { $dayOfMonth: '$createdAt' }
+        };
+        break;
+      case '1y':
+        dateFilter = { createdAt: { $gte: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000) } };
+        groupBy = {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' }
+        };
+        break;
+    }
+
+    const salesData = await Order.aggregate([
+      { 
+        $match: { 
+          ...dateFilter,
+          status: { $in: ['Approved', 'Shipped', 'Delivered'] }
+        }
+      },
+      {
+        $group: {
+          _id: groupBy,
+          revenue: { $sum: '$totalAmount' },
+          orderCount: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1, '_id.hour': 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      period,
+      data: salesData
+    });
+  } catch (error) {
+    console.error('Error fetching sales data:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Top products analytics
+router.get('/dashboard/top-products', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { limit = 10, period = '30d' } = req.query;
+    
+    let dateFilter = {};
+    const now = new Date();
+    
+    switch (period) {
+      case '7d':
+        dateFilter = { createdAt: { $gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) } };
+        break;
+      case '30d':
+        dateFilter = { createdAt: { $gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) } };
+        break;
+      case '1y':
+        dateFilter = { createdAt: { $gte: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000) } };
+        break;
+      default:
+        dateFilter = {};
+    }
+
+    const topProducts = await Order.aggregate([
+      { 
+        $match: { 
+          ...dateFilter,
+          status: { $in: ['Approved', 'Shipped', 'Delivered'] }
+        }
+      },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.productId',
+          totalSold: { $sum: '$items.qty' },
+          totalRevenue: { $sum: { $multiply: ['$items.qty', '$items.price'] } },
+          orderCount: { $sum: 1 }
+        }
+      },
+      { $sort: { totalSold: -1 } },
+      { $limit: parseInt(limit) },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      { $unwind: '$product' }
+    ]);
+
+    res.json({
+      success: true,
+      period,
+      products: topProducts
+    });
+  } catch (error) {
+    console.error('Error fetching top products:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Recent orders for dashboard
+router.get('/dashboard/recent-orders', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    
+    const recentOrders = await Order.find({})
+      .populate('userId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .select('orderId status totalAmount createdAt userId');
+
+    res.json({
+      success: true,
+      orders: recentOrders
+    });
+  } catch (error) {
+    console.error('Error fetching recent orders:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});

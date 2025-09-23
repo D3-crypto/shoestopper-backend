@@ -143,4 +143,60 @@ async function sendAbandonedCartEmail(email, cart) {
   });
 }
 
-module.exports = { sendMail, sendAbandonedCartEmail };
+module.exports = { sendMail, sendAbandonedCartEmail, sendNewsletterEmail };
+
+async function sendNewsletterEmail(email, subject, content, unsubscribeToken) {
+  const unsubscribeUrl = `${process.env.BACKEND_URL || 'https://shoestopper-backend.onrender.com'}/api/newsletter/unsubscribe/${unsubscribeToken}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${subject}</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 28px;">ShoeStopper Newsletter 👟</h1>
+        <p style="color: #f1f1f1; margin: 10px 0 0 0; font-size: 16px;">Stay updated with the latest trends</p>
+      </div>
+      
+      <div style="background: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h2 style="color: #333; margin: 0 0 20px 0;">${subject}</h2>
+        
+        <div style="margin: 25px 0;">
+          ${content}
+        </div>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 25px 0;">
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.FRONTEND_URL || 'https://shoestopper-frontend.onrender.com'}" 
+             style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px; display: inline-block;">
+            Shop Now 🛒
+          </a>
+        </div>
+        
+        <p style="font-size: 14px; color: #666; text-align: center; margin: 20px 0;">
+          If you no longer wish to receive these emails, you can 
+          <a href="${unsubscribeUrl}" style="color: #667eea;">unsubscribe here</a>.
+        </p>
+        
+        <div style="text-align: center;">
+          <p style="font-size: 14px; color: #999; margin: 0;">
+            ShoeStopper - Step into Style<br>
+            You're receiving this because you subscribed to our newsletter.
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return await sendMail({
+    to: email,
+    subject: `ShoeStopper: ${subject}`,
+    html: html,
+    text: content.replace(/<[^>]*>/g, '') // Strip HTML for text version
+  });
+}

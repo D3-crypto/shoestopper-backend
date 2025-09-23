@@ -22,7 +22,23 @@ const userSchema = new mongoose.Schema({
   failedLoginCount: { type: Number, default: 0 },
   loginBlocked: { type: Boolean, default: false },
   refreshTokenVersion: { type: Number, default: 0 },
-  isAdmin: { type: Boolean, default: false } // Admin flag
+  isAdmin: { type: Boolean, default: false }, // Admin flag
+  
+  // Admin management fields
+  isBlocked: { type: Boolean, default: false },
+  blockedAt: { type: Date },
+  blockedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  isVerified: { type: Boolean, default: false }, // Admin verification status
+  verifiedAt: { type: Date },
+  verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date },
+  deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  role: { 
+    type: String, 
+    enum: ['user', 'admin', 'super_admin'], 
+    default: 'user' 
+  }
 }, { timestamps: true });
 
 // TTL index: remove user when autoDeleteAt reached (0 seconds)
