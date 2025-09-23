@@ -13,7 +13,14 @@ router.get('/', async (req, res) => {
     const userId = req.user.id;
     console.log(`[CART] Get cart request for user: ${userId}`);
     
-    const cart = await Cart.findOne({ userId }).populate('items.variantId');
+    const cart = await Cart.findOne({ userId })
+      .populate({
+        path: 'items.variantId',
+        populate: {
+          path: 'productId',
+          model: 'Product'
+        }
+      });
     
     console.log(`[CART] Cart retrieved with ${cart ? cart.items.length : 0} items`);
     res.json(cart || { items: [] });
@@ -99,27 +106,60 @@ router.post('/add', async (req, res) => {
     res.status(500).json({ error: 'Failed to add to cart' });
   }
 });
-        cart.userEmail = userEmail;
-        cart.abandonedEmailSent = false;
-        await cart.save();
-        return res.json(cart);
-      }
-    } else {
-      // Create new cart for user
-      const newCart = new Cart({
-        userId,
-        items: [{ variantId, size, qty }],
-        userEmail,
-        abandonedEmailSent: false
-      });
-      
-      await newCart.save();
-      console.log(`[CART] Created new cart for user: ${userId}`);
-      return res.json(newCart);
+
+router.put('/update', async (req, res) => {
+  try {
+    const { variantId, size, qty } = req.body;
+    const userId = req.user.id;
+    
+    console.log(`[CART] Update item request - User: ${userId}, Variant: ${variantId}, Size: ${size}, Qty: ${qty}`);
+    
+    if (!variantId || !size || qty < 0) {
+      return res.status(400).json({ error: 'Invalid fields. variantId, size, and qty are required.' });
     }
+
+    // Check stock availability
+    const variant = await Variant.findById(variantId);
+    if (!variant) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+    
+    const sizeInfo = variant.sizes.find(s => s.size === size);
+    if (!sizeInfo) {
+      return res.status(404).json({ error: `Size ${size} not available for this color` });
+    }
+    
+    if (qty > sizeInfo.stock) {
+      return res.status(400).json({ error: 'Insufficient stock' });
+    }
+
+    let cart = await Cart.findOne({ userId });
+    if (!cart) {
+      return res.status(404).json({ error: 'Cart not found' });
+    }
+
+    const itemIndex = cart.items.findIndex(item => 
+      item.variantId.toString() === variantId && item.size === size
+    );
+
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: 'Item not found in cart' });
+    }
+
+    if (qty === 0) {
+      // Remove item if quantity is 0
+      cart.items.splice(itemIndex, 1);
+    } else {
+      // Update quantity
+      cart.items[itemIndex].qty = qty;
+    }
+
+    await cart.save();
+    console.log(`[CART] Item updated successfully`);
+    res.json(cart);
   } catch (error) {
-    console.error('[CART] Error adding to cart:', error);
-    res.status(500).json({ error: 'Failed to add to cart' });
+    console.error('[CART] Error updating cart:', error);
+    res.status(500).json({ error: 'Failed to update cart' });
   }
 });
 
